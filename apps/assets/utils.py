@@ -78,7 +78,8 @@ class TreeService(Tree):
 
     def ancestors(self, nid, with_self=False, deep=False):
         ancestor_ids = self.ancestors_ids(nid, with_self=with_self)
-        return [self.get_node(i, deep=deep) for i in ancestor_ids]
+        ancestors = [self.get_node(i, deep=deep) for i in ancestor_ids]
+        return ancestors
 
     def get_node_full_tag(self, nid):
         ancestors = self.ancestors(nid, with_self=True)
@@ -102,6 +103,7 @@ class TreeService(Tree):
         node = super().get_node(nid)
         if deep:
             node = self.copy_node(node)
+            node.data = {}
         return node
 
     def parent(self, nid, deep=False):

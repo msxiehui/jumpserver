@@ -8,6 +8,7 @@
 3. 程序需要, 用户需要更改的写到本config中
 """
 import os
+import re
 import sys
 import types
 import errno
@@ -15,9 +16,13 @@ import json
 import yaml
 from importlib import import_module
 from django.urls import reverse_lazy
+from django.contrib.staticfiles.templatetags.staticfiles import static
+from urllib.parse import urljoin, urlparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
+XPACK_DIR = os.path.join(BASE_DIR, 'xpack')
+HAS_XPACK = os.path.isdir(XPACK_DIR)
 
 
 def import_string(dotted_path):
@@ -34,6 +39,38 @@ def import_string(dotted_path):
         raise ImportError('Module "%s" does not define a "%s" attribute/class' % (
             module_path, class_name)
         ) from err
+
+
+def is_absolute_uri(uri):
+    """ 判断一个uri是否是绝对地址 """
+    if not isinstance(uri, str):
+        return False
+
+    result = re.match(r'^http[s]?://.*', uri)
+    if result is None:
+        return False
+
+    return True
+
+
+def build_absolute_uri(base, uri):
+    """ 构建绝对uri地址 """
+    if uri is None:
+        return base
+
+    if isinstance(uri, int):
+        uri = str(uri)
+
+    if not isinstance(uri, str):
+        return base
+
+    if is_absolute_uri(uri):
+        return uri
+
+    parsed_base = urlparse(base)
+    url = "{}://{}".format(parsed_base.scheme, parsed_base.netloc)
+    path = '{}/{}/'.format(parsed_base.path.strip('/'), uri.strip('/'))
+    return urljoin(url, path)
 
 
 class DoesNotExist(Exception):
@@ -87,7 +124,7 @@ class Config(dict):
         # Django Config, Must set before start
         'SECRET_KEY': '',
         'BOOTSTRAP_TOKEN': '',
-        'DEBUG': True,
+        'DEBUG': False,
         'LOG_LEVEL': 'DEBUG',
         'LOG_DIR': os.path.join(PROJECT_DIR, 'logs'),
         'DB_ENGINE': 'mysql',
@@ -134,15 +171,32 @@ class Config(dict):
         'AUTH_LDAP_USER_LOGIN_ONLY_IN_USERS': False,
         'AUTH_LDAP_OPTIONS_OPT_REFERRALS': -1,
 
+        # OpenID 配置参数
+        # OpenID 公有配置参数 (version <= 1.5.8 或 version >= 1.5.8)
         'AUTH_OPENID': False,
-        'BASE_SITE_URL': 'http://localhost:8080',
-        'AUTH_OPENID_SERVER_URL': 'http://openid',
-        'AUTH_OPENID_REALM_NAME': 'jumpserver',
-        'AUTH_OPENID_CLIENT_ID': 'jumpserver',
-        'AUTH_OPENID_CLIENT_SECRET': '',
-        'AUTH_OPENID_IGNORE_SSL_VERIFICATION': True,
+        'BASE_SITE_URL': None,
+        'AUTH_OPENID_CLIENT_ID': 'client-id',
+        'AUTH_OPENID_CLIENT_SECRET': 'client-secret',
         'AUTH_OPENID_SHARE_SESSION': True,
-        'CAS_ROOT_PROXIED_AS': '',
+        'AUTH_OPENID_IGNORE_SSL_VERIFICATION': True,
+        # OpenID 新配置参数 (version >= 1.5.9)
+        'AUTH_OPENID_PROVIDER_ENDPOINT': 'https://op-example.com/',
+        'AUTH_OPENID_PROVIDER_AUTHORIZATION_ENDPOINT': 'https://op-example.com/authorize',
+        'AUTH_OPENID_PROVIDER_TOKEN_ENDPOINT': 'https://op-example.com/token',
+        'AUTH_OPENID_PROVIDER_JWKS_ENDPOINT': 'https://op-example.com/jwks',
+        'AUTH_OPENID_PROVIDER_USERINFO_ENDPOINT': 'https://op-example.com/userinfo',
+        'AUTH_OPENID_PROVIDER_END_SESSION_ENDPOINT': 'https://op-example.com/logout',
+        'AUTH_OPENID_PROVIDER_SIGNATURE_ALG': 'HS256',
+        'AUTH_OPENID_PROVIDER_SIGNATURE_KEY': None,
+        'AUTH_OPENID_SCOPES': 'openid profile email',
+        'AUTH_OPENID_ID_TOKEN_MAX_AGE': 60,
+        'AUTH_OPENID_ID_TOKEN_INCLUDE_CLAIMS': True,
+        'AUTH_OPENID_USE_STATE': True,
+        'AUTH_OPENID_USE_NONCE': True,
+        'AUTH_OPENID_ALWAYS_UPDATE_USER': True,
+        # OpenID 旧配置参数 (version <= 1.5.8 (discarded))
+        'AUTH_OPENID_SERVER_URL': 'http://openid',
+        'AUTH_OPENID_REALM_NAME': None,
 
         'AUTH_RADIUS': False,
         'RADIUS_SERVER': 'localhost',
@@ -153,8 +207,12 @@ class Config(dict):
 
         'AUTH_CAS': False,
         'CAS_SERVER_URL': "http://host/cas/",
+        'CAS_ROOT_PROXIED_AS': '',
         'CAS_LOGOUT_COMPLETELY': True,
         'CAS_VERSION': 3,
+
+        'AUTH_SSO': False,
+        'AUTH_SSO_AUTHKEY_TTL': 60 * 15,
 
         'OTP_VALID_WINDOW': 2,
         'OTP_ISSUER_NAME': 'JumpServer',
@@ -171,6 +229,7 @@ class Config(dict):
         'TERMINAL_COMMAND_STORAGE': {},
 
         'SECURITY_MFA_AUTH': False,
+        'SECURITY_COMMAND_EXECUTION': True,
         'SECURITY_SERVICE_ACCOUNT_REGISTRATION': True,
         'SECURITY_VIEW_AUTH_NEED_MFA': True,
         'SECURITY_LOGIN_LIMIT_COUNT': 7,
@@ -182,15 +241,17 @@ class Config(dict):
         'SECURITY_PASSWORD_LOWER_CASE': False,
         'SECURITY_PASSWORD_NUMBER': False,
         'SECURITY_PASSWORD_SPECIAL_CHAR': False,
+        'SECURITY_LOGIN_CHALLENGE_ENABLED': False,
+        'SECURITY_LOGIN_CAPTCHA_ENABLED': True,
 
         'HTTP_BIND_HOST': '0.0.0.0',
         'HTTP_LISTEN_PORT': 8080,
         'WS_LISTEN_PORT': 8070,
-        'LOGIN_LOG_KEEP_DAYS': 90,
+        'LOGIN_LOG_KEEP_DAYS': 9999,
         'TASK_LOG_KEEP_DAYS': 10,
         'ASSETS_PERM_CACHE_TIME': 3600 * 24,
         'SECURITY_MFA_VERIFY_TTL': 3600,
-        'ASSETS_PERM_CACHE_ENABLE': False,
+        'ASSETS_PERM_CACHE_ENABLE': HAS_XPACK,
         'SYSLOG_ADDR': '',  # '192.168.0.1:514'
         'SYSLOG_FACILITY': 'user',
         'SYSLOG_SOCKTYPE': 2,
@@ -202,8 +263,94 @@ class Config(dict):
         'FORCE_SCRIPT_NAME': '',
         'LOGIN_CONFIRM_ENABLE': False,
         'WINDOWS_SKIP_ALL_MANUAL_PASSWORD': False,
-        'ORG_CHANGE_TO_URL': ''
+        'ORG_CHANGE_TO_URL': '',
+        'LANGUAGE_CODE': 'zh',
+        'TIME_ZONE': 'Asia/Shanghai',
+        'CHANGE_AUTH_PLAN_SECURE_MODE_ENABLED': True,
+        'USER_LOGIN_SINGLE_MACHINE_ENABLED': False
     }
+
+    def compatible_auth_openid_of_key(self):
+        """
+        兼容OpenID旧配置 (即 version <= 1.5.8)
+        因为旧配置只支持OpenID协议的Keycloak实现,
+        所以只需要根据旧配置和Keycloak的Endpoint说明文档，
+        构造出新配置中标准OpenID协议中所需的Endpoint即可
+        (Keycloak说明文档参考: https://www.keycloak.org/docs/latest/securing_apps/)
+        """
+        if not self.AUTH_OPENID:
+            return
+
+        realm_name = self.AUTH_OPENID_REALM_NAME
+        if realm_name is None:
+            return
+
+        compatible_keycloak_config = [
+            (
+                'AUTH_OPENID_PROVIDER_ENDPOINT',
+                self.AUTH_OPENID_SERVER_URL
+            ),
+            (
+                'AUTH_OPENID_PROVIDER_AUTHORIZATION_ENDPOINT',
+                '/realms/{}/protocol/openid-connect/auth'.format(realm_name)
+            ),
+            (
+                'AUTH_OPENID_PROVIDER_TOKEN_ENDPOINT',
+                '/realms/{}/protocol/openid-connect/token'.format(realm_name)
+            ),
+            (
+                'AUTH_OPENID_PROVIDER_JWKS_ENDPOINT',
+                '/realms/{}/protocol/openid-connect/certs'.format(realm_name)
+            ),
+            (
+                'AUTH_OPENID_PROVIDER_USERINFO_ENDPOINT',
+                '/realms/{}/protocol/openid-connect/userinfo'.format(realm_name)
+            ),
+            (
+                'AUTH_OPENID_PROVIDER_END_SESSION_ENDPOINT',
+                '/realms/{}/protocol/openid-connect/logout'.format(realm_name)
+            )
+        ]
+        for key, value in compatible_keycloak_config:
+            self[key] = value
+
+    def compatible_auth_openid_of_value(self):
+        """
+        兼容值的绝对路径、相对路径
+        (key 为 AUTH_OPENID_PROVIDER_*_ENDPOINT 的配置)
+        """
+        if not self.AUTH_OPENID:
+            return
+
+        base = self.AUTH_OPENID_PROVIDER_ENDPOINT
+        config = list(self.items())
+        for key, value in config:
+            result = re.match(r'^AUTH_OPENID_PROVIDER_.*_ENDPOINT$', key)
+            if result is None:
+                continue
+            if value is None:
+                # None 在 url 中有特殊含义 (比如对于: end_session_endpoint)
+                continue
+            value = build_absolute_uri(base, value)
+            self[key] = value
+
+    def compatible(self):
+        """
+        对配置做兼容处理
+        1. 对`key`的兼容 (例如：版本升级)
+        2. 对`value`做兼容 (例如：True、true、1 => True)
+
+        处理顺序要保持先对key做处理, 再对value做处理,
+        因为处理value的时候，只根据最新版本支持的key进行
+        """
+        parts = ['key', 'value']
+        targets = ['auth_openid']
+        for part in parts:
+            for target in targets:
+                method_name = 'compatible_{}_of_{}'.format(target, part)
+                method = getattr(self, method_name, None)
+                if method is not None:
+                    method()
 
     def convert_type(self, k, v):
         default_value = self.defaults.get(k)
@@ -281,9 +428,6 @@ class DynamicConfig:
         return lambda: self.get(item)
 
     def LOGIN_URL(self):
-        auth_openid = self.get('AUTH_OPENID')
-        if auth_openid:
-            return reverse_lazy("authentication:openid:openid-login")
         return self.get('LOGIN_URL')
 
     def AUTHENTICATION_BACKENDS(self):
@@ -296,11 +440,45 @@ class DynamicConfig:
         if self.static_config.get('AUTH_CAS'):
             backends.insert(0, 'authentication.backends.cas.CASBackend')
         if self.static_config.get('AUTH_OPENID'):
-            backends.insert(0, 'authentication.backends.openid.backends.OpenIDAuthorizationPasswordBackend')
-            backends.insert(0, 'authentication.backends.openid.backends.OpenIDAuthorizationCodeBackend')
+            backends.insert(0, 'jms_oidc_rp.backends.OIDCAuthPasswordBackend')
+            backends.insert(0, 'jms_oidc_rp.backends.OIDCAuthCodeBackend')
         if self.static_config.get('AUTH_RADIUS'):
             backends.insert(0, 'authentication.backends.radius.RadiusBackend')
+        if self.static_config.get('AUTH_SSO'):
+            backends.insert(0, 'authentication.backends.api.SSOAuthentication')
         return backends
+
+    def XPACK_LICENSE_IS_VALID(self):
+        if not HAS_XPACK:
+            return False
+        try:
+            from xpack.plugins.license.models import License
+            return License.has_valid_license()
+        except:
+            return False
+
+    def LOGO_URLS(self):
+        logo_urls = {'logo_logout': static('img/logo.png'),
+                     'logo_index': static('img/logo_text.png'),
+                     'login_image': static('img/login_image.png'),
+                     'favicon': static('img/facio.ico')}
+        if not HAS_XPACK:
+            return logo_urls
+        try:
+            from xpack.plugins.interface.models import Interface
+            obj = Interface.interface()
+            if obj:
+                if obj.logo_logout:
+                    logo_urls.update({'logo_logout': obj.logo_logout.url})
+                if obj.logo_index:
+                    logo_urls.update({'logo_index': obj.logo_index.url})
+                if obj.login_image:
+                    logo_urls.update({'login_image': obj.login_image.url})
+                if obj.favicon:
+                    logo_urls.update({'favicon': obj.favicon.url})
+        except:
+            pass
+        return logo_urls
 
     def get_from_db(self, item):
         if self.db_setting is not None:
@@ -478,9 +656,9 @@ class ConfigManager:
 
         manager = cls(root_path=root_path)
         if manager.load_from_object():
-            return manager.config
+            config = manager.config
         elif manager.load_from_yml():
-            return manager.config
+            config = manager.config
         else:
             msg = """
 
@@ -490,7 +668,10 @@ class ConfigManager:
             """
             raise ImportError(msg)
 
+        # 对config进行兼容处理
+        config.compatible()
+        return config
+
     @classmethod
     def get_dynamic_config(cls, config):
         return DynamicConfig(config)
-

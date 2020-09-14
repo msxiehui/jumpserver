@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 
-from django.urls import path, include, re_path
+from django.urls import path, re_path
 from rest_framework_bulk.routes import BulkRouter
 
 from common import api as capi
@@ -22,6 +22,7 @@ router.register(r'replay-storages', api.ReplayStorageViewSet, 'replay-storage')
 router.register(r'command-storages', api.CommandStorageViewSet, 'command-storage')
 
 urlpatterns = [
+    path('sessions/join/validate/', api.SessionJoinValidateAPI.as_view(), name='join-session-validate'),
     path('sessions/<uuid:pk>/replay/',
          api.SessionReplayViewSet.as_view({'get': 'retrieve', 'post': 'create'}),
          name='session-replay'),

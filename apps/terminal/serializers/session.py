@@ -1,12 +1,13 @@
 from rest_framework import serializers
 
+from django.utils.translation import ugettext_lazy as _
 from orgs.mixins.serializers import BulkOrgResourceModelSerializer
 from common.serializers import AdaptedBulkListSerializer
 from ..models import Session
 
 __all__ = [
     'SessionSerializer', 'SessionDisplaySerializer',
-    'ReplaySerializer',
+    'ReplaySerializer', 'SessionJoinValidateSerializer',
 ]
 
 
@@ -21,9 +22,13 @@ class SessionSerializer(BulkOrgResourceModelSerializer):
             "user_id", "asset_id", "system_user_id",
             "login_from", "login_from_display", "remote_addr",
             "is_success",  "is_finished", "has_replay", "can_replay",
-            "protocol", "date_start", "date_end",
+            "can_join", "protocol", "date_start", "date_end",
             "terminal",
         ]
+        extra_kwargs = {
+            "protocol": {'label': _('Protocol')},
+            'is_finished': {'label': _('Is finished')}
+        }
 
 
 class SessionDisplaySerializer(SessionSerializer):
@@ -35,3 +40,8 @@ class SessionDisplaySerializer(SessionSerializer):
 
 class ReplaySerializer(serializers.Serializer):
     file = serializers.FileField(allow_empty_file=True)
+
+
+class SessionJoinValidateSerializer(serializers.Serializer):
+    user_id = serializers.UUIDField()
+    session_id = serializers.UUIDField()
